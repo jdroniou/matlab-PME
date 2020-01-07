@@ -5,8 +5,9 @@
 %    Date: 04/01/20
 %
 % This code is provided as a companion of the article
-%   "The gradient discretisation method for nonlinear porous media equations", J. Droniou and K. N. Le,
+%   %   "The gradient discretisation method for slow and fast diffusion porous media equations", J. Droniou and K. N. Le,
 %   https://arxiv.org/abs/1905.01785
+
 %
 % Usage and modification of this code is permitted, but any scientific publication resulting from
 % part of this code should cite the aforementioned article.
