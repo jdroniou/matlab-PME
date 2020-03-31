@@ -6,7 +6,7 @@
 %
 % This code is provided as a companion of the article
 %   "The gradient discretisation method for slow and fast diffusion porous media equations", J. Droniou and K. N. Le,
-%   https://arxiv.org/abs/1905.01785
+%   to appear in SIAM J. Numer. Anal. https://arxiv.org/abs/1905.01785
 %
 % Usage and modification of this code is permitted, but any scientific publication resulting from
 % part of this code should cite the aforementioned article.
@@ -23,7 +23,7 @@ global CB;
 forcediff=1;
 
 t0=.1;
-m=3;
+m=2;
 CB=0.005;
 
 %t0=.5;
@@ -32,6 +32,7 @@ CB=0.005;
 
 % Final times
 T=1;
+dt_initial=0.1;
 
 % nonlinear iterations
 tol=1e-8;
@@ -43,7 +44,7 @@ relax = 0;
 % Sequence of meshes over which we want to run the scheme
 %%
 % The meshes are available at https://github.com/jdroniou/HHO-Lapl-OM
-meshes={'hexa1_1.mat';'hexa1_2.mat'};%'hexa1_3.mat';'hexa1_4.mat'};
+meshes={'hexa1_1.mat';'hexa1_2.mat'};%'hexa1_3.mat';'hexa1_4.mat';'hexa1_5.mat'};
 
 nbmeshes=size(meshes,1);
 Lmp1_error=zeros(nbmeshes,1);
@@ -56,6 +57,7 @@ fid = fopen('results.txt','w');
 str = sprintf('m=%f, t0=%f\n',m,t0);
 forkprint(fid,str);
 %%%fclose(fid);
+Ndt(1) = ceil(T/dt_initial);
 
 for imesh=1:nbmeshes
 	% Load mesh
@@ -68,8 +70,11 @@ for imesh=1:nbmeshes
   h(imesh)=max(abs(diam));
 
   % Time steps
-  Ndt(imesh)=ceil(T/h(imesh)^2);
-
+%  Ndt(imesh)=ceil(T/h(imesh)^2);
+  if (imesh>1) 
+    Ndt(imesh) = Ndt(imesh-1)*4;
+  end;
+  
   str = sprintf('mesh= %s, h= %4.2e, time step= %4.2e \n',meshes{imesh},h(imesh),T/Ndt(imesh));
   forkprint(fid,str);
 
@@ -98,6 +103,7 @@ for imesh=1:nbmeshes
 
   % Time steppings
   dt=T/Ndt(imesh);
+  ave_newton(imesh) = 0;
   for idt=1:Ndt(imesh);
 	  str = sprintf('idt=%d / %d\n',idt,Ndt(imesh));
     forkprint(fid,str);
@@ -168,15 +174,16 @@ for imesh=1:nbmeshes
       if (m > 1)
         betau = X;
         betau(1:ncell) = X(1:ncell).^m;
-        res = norm( (Mass*X+forcediff*dt*A*betau)-rhs , Inf);
+        res = norm( (Mass*X+forcediff*dt*A*betau)-rhs , 2);
       else
         Mass = sparse(diag([area' zeros(1,nedge)]));
         Xom = abs(X).^(1/m).*sign(X);
-        res = norm( Mass * Xom + forcediff*dt*A*X - rhs , Inf);
+        res = norm( Mass * Xom + forcediff*dt*A*X - rhs , 2);
       end
 
       Xprev = X;
     end; % end nonlinear iterations
+    ave_newton(imesh) = ave_newton(imesh) + iter;
 
    if (iter==itermax)
       res
@@ -184,6 +191,7 @@ for imesh=1:nbmeshes
       error('no convergence')
    end;
   usol = transform(X,ncell,'to_solution');
+
 
   % Write the solution and grid vtk files, to be plotted by "paraview"
   write_solution_vtk(usol,strcat('VTKout/solution',num2str(idt)),ncell,nedge,nvert,cell_v,cell_n,cell_e,vertex);
@@ -205,11 +213,28 @@ for imesh=1:nbmeshes
 
   end; % end time stepping
 
-% compute error
-[Lmp1_error(imesh) L2beta_error(imesh)] = compute_errors(usol(1:ncell),ex_sol(1:ncell),area);
+ave_newton(imesh) = ave_newton(imesh)/Ndt(imesh);
 
-str = sprintf('Mesh %i. Errors: L^(m+1)=%4.2e, L^2 on u^m:%4.2e\n',imesh,Lmp1_error(imesh),L2beta_error(imesh));
+% compute error
+[Lmp1_error(imesh) L2beta_error(imesh) H1beta_error(imesh)] = compute_errors(ncell,usol,ex_sol,area,A);
+
+str = sprintf('Mesh %i. Errors: L^(m+1)=%4.2e, L^2 on u^m:%4.2e, H1 on beta(u):%4.2e\n',imesh,Lmp1_error(imesh),L2beta_error(imesh),H1beta_error(imesh));
 forkprint(fid,str);
+
+% fraction of negative mass
+fraction_neg_mass(imesh) = abs( sum(area.*min(usol(1:ncell),0)) / sum(area.*abs(usol(1:ncell))) );
+str = sprintf('Mesh %i. Fraction negative mass %f\n',imesh,fraction_neg_mass(imesh));
+forkprint(fid,str);
+
+% nb of interior edges
+nedges_int(imesh) = nedge;
+for i=1:ncell
+  for j=1:size(cell_e{i},2)
+	  if (cell_n{i}(j)==0) 
+      nedges_int(imesh) = nedges_int(imesh)-1;
+    end
+  end
+end
 
 end; % end meshes
 
@@ -217,6 +242,7 @@ end; % end meshes
 for imesh=1:nbmeshes-1 % convergence rate
   ocLmp1(imesh)=log(Lmp1_error(imesh)/Lmp1_error(imesh+1))/log(h(imesh)/h(imesh+1));
   ocL2beta(imesh)=log(L2beta_error(imesh)/L2beta_error(imesh+1))/log(h(imesh)/h(imesh+1));
+  ocH1beta(imesh)=log(H1beta_error(imesh)/H1beta_error(imesh+1))/log(h(imesh)/h(imesh+1));
 end
 
 str = sprintf('\nErrors in L^(m+1) and orders of convergence:\n');
@@ -243,9 +269,28 @@ for imesh=1:nbmeshes
   end
 end
 
+str = sprintf('\nErrors in H1 on u^m and orders of convergence:\n');
+forkprint(fid,str);
+for imesh=1:nbmeshes
+  if (imesh==1)
+    str = sprintf('\t%4.2e\n',H1beta_error(imesh));
+    forkprint(fid,str);
+  else
+    str = sprintf('\t%4.2e \t %4.2e\n',H1beta_error(imesh),ocH1beta(imesh-1));
+    forkprint(fid,str);
+  end
+end
+
 fclose(fid);
 
 
+% Write data file
+fid = fopen('data_rates.dat','w');
+fprintf(fid,'meshsize timestep L2error_zeta Lmp1error H1error NedgesInt AveNewton FractionNegMass\n');
+for i=1:nbmeshes
+  fprintf(fid,'%f %f %f %f %f %d %f %f\n',h(i),T/Ndt(i),L2beta_error(i),Lmp1_error(i),H1beta_error(i),nedges_int(i),ave_newton(i),fraction_neg_mass(i));
+end;
+fclose(fid);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -253,6 +298,7 @@ function forkprint(fid,str);
 
 fprintf(fid,'%s',str);
 fprintf(str);
+
 
 end
 
