@@ -8,5 +8,5 @@ These codes are companion to the article "The gradient discretisation method for
 
 Usage of these codes is permitted, but any resulting scientific publication should cite this paper.
 
-*Note*: The meshes required to run these matlab codes are available in the HArDCore2D repository, see https://github.com/jdroniou/HArDCore.
+*Note*: The meshes required to run these matlab codes are available in the HHO-Lapl-OM repository, see https://github.com/jdroniou/HHO-Lapl-OM.
 
